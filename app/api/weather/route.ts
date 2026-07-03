@@ -4,11 +4,24 @@ const API_BASE = "https://api.openweathermap.org";
 
 type GeoResult = {
   name: string;
-  local_names?: { ja?: string };
+  local_names?: Record<string, string>;
   lat: number;
   lon: number;
   country: string;
 };
+
+// OWMの曖昧マッチ対策: 検索語と名前が一致する候補を優先する
+// （例: "Osaka" の先頭候補が Orsk(ロシア) になることがある）
+function pickBestMatch(results: GeoResult[], query: string): GeoResult {
+  const q = query.toLowerCase();
+  return (
+    results.find(
+      (r) =>
+        r.name.toLowerCase() === q ||
+        Object.values(r.local_names ?? {}).some((n) => n.toLowerCase() === q)
+    ) ?? results[0]
+  );
+}
 
 export async function GET(request: NextRequest) {
   const apiKey = process.env.OPENWEATHER_API_KEY;
@@ -27,9 +40,12 @@ export async function GET(request: NextRequest) {
 
   if (city) {
     const geoRes = await fetch(
-      `${API_BASE}/geo/1.0/direct?q=${encodeURIComponent(city)}&limit=1&appid=${apiKey}`
+      `${API_BASE}/geo/1.0/direct?q=${encodeURIComponent(city)}&limit=5&appid=${apiKey}`
     );
     if (!geoRes.ok) {
+      console.error(
+        `Geocoding API error: status=${geoRes.status} body=${await geoRes.text()}`
+      );
       return NextResponse.json(
         { error: "都市の検索に失敗しました" },
         { status: 502 }
@@ -42,9 +58,10 @@ export async function GET(request: NextRequest) {
         { status: 404 }
       );
     }
-    lat = String(geo[0].lat);
-    lon = String(geo[0].lon);
-    locationName = geo[0].local_names?.ja ?? geo[0].name;
+    const best = pickBestMatch(geo, city);
+    lat = String(best.lat);
+    lon = String(best.lon);
+    locationName = best.local_names?.ja ?? best.name;
   }
 
   if (!lat || !lon) {
@@ -61,6 +78,9 @@ export async function GET(request: NextRequest) {
   ]);
 
   if (!currentRes.ok || !forecastRes.ok) {
+    console.error(
+      `Weather API error: current=${currentRes.status} forecast=${forecastRes.status}`
+    );
     return NextResponse.json(
       { error: "天気情報の取得に失敗しました" },
       { status: 502 }
