@@ -233,10 +233,23 @@ export default function Home() {
             lon: String(pos.coords.longitude),
           })
         ),
-      () => {
+      (err) => {
         setLoading(false);
-        setError("位置情報を取得できませんでした。都市名で検索してください");
-      }
+        if (err.code === err.PERMISSION_DENIED) {
+          setError(
+            "位置情報の使用が許可されていません。アドレスバー左のアイコンから位置情報を「許可」にして、もう一度お試しください"
+          );
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          setError(
+            "現在地を特定できませんでした。Macの場合は「システム設定 → プライバシーとセキュリティ → 位置情報サービス」でブラウザをオンにしてください。都市名での検索もご利用いただけます"
+          );
+        } else {
+          setError(
+            "位置情報の取得がタイムアウトしました。もう一度お試しください"
+          );
+        }
+      },
+      { timeout: 10000 }
     );
   }
 
